@@ -37,7 +37,13 @@ GetOptions(
   'output' => \my $outdir,
   'version|V' => \ my $version,
   'help|?' => \my $help,
-  'sharedMemory|s' => \my $sharedMem
+
+  #added by CAS to expose Trinity options
+  'kmer=i'      => \my $kmer,
+  'reinforce=i' => \my $reinforce,
+  'percentID=i' => \my $percentID,
+  'maxdiffs=i'  => \my $maxdiffs,
+  'retry=s'     => \my $thisIsADummyVariable
 
 ) or pod2usage(2); # die "Invalid options passed to $0\n";
 
@@ -58,14 +64,12 @@ if(!($method))
 
 if(!($memory)) {$memory = "32G";}
 if(!($threads)) {$threads = 1;}
-if(!($sharedMem)) 
-{
-	$sharedMem = "NoSharedMemory";
-}
-else
-{
-	$sharedMem = "LoadAndKeep";
-}
+
+if(!($kmer))      {$kmer      = 25;}
+if(!($reinforce)) {$reinforce = 25;}
+if(!($percentID)) {$percentID = 98;}
+if(!($maxdiffs))  {$maxdiffs  = 2;}
+
 
 # Check organism and method
 
@@ -92,12 +96,12 @@ if($single && $paired)
 	pod2usage(-message=>"\nERROR: Please enter either single or paired read files\n");
 }
 
-if($single && ($single =~/(.*\/(.*).fastq.gz)/ || $single =~/((.*).fastq.gz)/) )
+if($single && ($single =~/(.*\/(.*).(?:fastq|fq).gz)/ || $single =~/((.*).(?:fastq|fq).gz)/) )
 {
         $read1_file = $1;
         $sample = $2;
 }
-elsif($paired && ($paired=~/(.*\/(.*?).fastq.gz)\,(.*fastq.gz)/ || $paired=~/((.*?).fastq.gz)\,(.*fastq.gz)/) )
+elsif($paired && ($paired=~/(.*\/(.*?).(?:fastq|fq).gz)\,(.*(?:fastq|fq).gz)/ || $paired=~/((.*?).(?:fastq|fq).gz)\,(.*(?:fastq|fq).gz)/) )
 {
         $read1_file = $1;
         $read2_file = $3;
@@ -233,13 +237,13 @@ else
 
 	if($single)
 	{
-		print "java -jar $trimmomatic_jar SE -threads $threads -trimlog Trimmed/Log/$sample\_trim.log $read1_file Trimmed/$sample\_nexteratrim.fastq.gz ILLUMINACLIP:$adapter_file:2:30:10\n";
-		system "java -jar $trimmomatic_jar SE -threads $threads -trimlog Trimmed/Log/$sample\_trim.log $read1_file Trimmed/$sample\_nexteratrim.fastq.gz ILLUMINACLIP:$adapter_file:2:30:10\n";
+		print "java -jar $trimmomatic_jar SE -threads $threads -trimlog Trimmed/Log/$sample\_trim.log $read1_file Trimmed/$sample\_nexteratrim.fastq.gz ILLUMINACLIP:$adapter_file:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:20 MINLEN:36\n";
+		system "java -jar $trimmomatic_jar SE -threads $threads -trimlog Trimmed/Log/$sample\_trim.log $read1_file Trimmed/$sample\_nexteratrim.fastq.gz ILLUMINACLIP:$adapter_file:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:20 MINLEN:36\n";
 	}
 	elsif($paired) 
 	{
-		print "java -jar $trimmomatic_jar PE -threads $threads -trimlog Trimmed/Log/$sample\_trim.log $read1_file $read2_file Trimmed/$sample\_nexteratrim_1P.fastq.gz Trimmed/$sample\_nexteratrim_1U.fastq.gz Trimmed/$sample\_nexteratrim_2P.fastq.gz Trimmed/$sample\_nexteratrim_2U.fastq.gz ILLUMINACLIP:$adapter_file:2:30:10\n";
-		system "java -jar $trimmomatic_jar PE -threads $threads -trimlog Trimmed/Log/$sample\_trim.log $read1_file $read2_file Trimmed/$sample\_nexteratrim_1P.fastq.gz Trimmed/$sample\_nexteratrim_1U.fastq.gz Trimmed/$sample\_nexteratrim_2P.fastq.gz Trimmed/$sample\_nexteratrim_2U.fastq.gz ILLUMINACLIP:$adapter_file:2:30:10\n";
+		print "java -jar $trimmomatic_jar PE -threads $threads -trimlog Trimmed/Log/$sample\_trim.log $read1_file $read2_file Trimmed/$sample\_nexteratrim_1P.fastq.gz Trimmed/$sample\_nexteratrim_1U.fastq.gz Trimmed/$sample\_nexteratrim_2P.fastq.gz Trimmed/$sample\_nexteratrim_2U.fastq.gz ILLUMINACLIP:$adapter_file:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:20 MINLEN:36\n";
+		system "java -jar $trimmomatic_jar PE -threads $threads -trimlog Trimmed/Log/$sample\_trim.log $read1_file $read2_file Trimmed/$sample\_nexteratrim_1P.fastq.gz Trimmed/$sample\_nexteratrim_1U.fastq.gz Trimmed/$sample\_nexteratrim_2P.fastq.gz Trimmed/$sample\_nexteratrim_2U.fastq.gz ILLUMINACLIP:$adapter_file:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:20 MINLEN:36\n";
 	}  
 
 	print strftime("%Y-%m-%d %H:%M:%S\tFinished Trimmomatic to remove adapters\n", localtime(time));
@@ -310,8 +314,8 @@ if($method =~/IG-mapped/ || $method=~/FilterNonIG/)
 
 		# Align to reference
 
-		print "$STAR --genomeDir $genomeDir --genomeLoad $sharedMem --readFilesIn $input_reads --runThreadN $threads --outStd BAM_SortedByCoordinate --outSAMtype BAM SortedByCoordinate --outSAMmode Full  --limitBAMsortRAM 20000000000 --outSAMattributes All --outSAMstrandField intronMotif --outSAMunmapped Within --outReadsUnmapped Fastx --quantMode GeneCounts --outFileNamePrefix STAR/$sample\.STAR. 1> STAR/$sample\.STAR.sorted.bam\n";
-		my $cmd_star = "$STAR --genomeDir $genomeDir --genomeLoad $sharedMem --readFilesIn $input_reads --runThreadN $threads --outStd BAM_SortedByCoordinate --outSAMtype BAM SortedByCoordinate --outSAMmode Full  --limitBAMsortRAM 20000000000 --outSAMattributes All --outSAMstrandField intronMotif --outSAMunmapped Within --outReadsUnmapped Fastx --quantMode GeneCounts --outFileNamePrefix STAR/$sample\.STAR. 1> STAR/$sample\.STAR.sorted.bam";
+		print "$STAR --genomeDir $genomeDir --genomeLoad LoadAndKeep --readFilesIn $input_reads --runThreadN $threads --outStd BAM_SortedByCoordinate --outSAMtype BAM SortedByCoordinate --outSAMmode Full  --limitBAMsortRAM 20000000000 --outSAMattributes All --outSAMstrandField intronMotif --outSAMunmapped Within --outReadsUnmapped Fastx --quantMode GeneCounts --outFileNamePrefix STAR/$sample\.STAR. 1> STAR/$sample\.STAR.sorted.bam\n";
+		my $cmd_star = "$STAR --genomeDir $genomeDir --genomeLoad LoadAndKeep --readFilesIn $input_reads --runThreadN $threads --outStd BAM_SortedByCoordinate --outSAMtype BAM SortedByCoordinate --outSAMmode Full  --limitBAMsortRAM 20000000000 --outSAMattributes All --outSAMstrandField intronMotif --outSAMunmapped Within --outReadsUnmapped Fastx --quantMode GeneCounts --outFileNamePrefix STAR/$sample\.STAR. 1> STAR/$sample\.STAR.sorted.bam";
 		my @args = ("bash","-c","$cmd_star");
 		system(@args);
 		
@@ -630,8 +634,11 @@ sub run_trinity
 	else
 	{
 		print strftime("%Y-%m-%d %H:%M:%S\tRunning Trinity assembly for $input_reads.\n", localtime(time));	
-		print "$trinity --seqType fq --full_cleanup --max_memory $memory $input_reads --CPU $threads --no_normalize_reads --output $out/Trinity/$sample\.$chain\_trinity > $out/Trinity/Log/$sample\.$chain\_trinity_log\n";
-		system "$trinity --seqType fq --full_cleanup --max_memory $memory $input_reads --CPU $threads --no_normalize_reads --output $out/Trinity/$sample\.$chain\_trinity > $out/Trinity/Log/$sample\.$chain\_trinity_log";
+
+		#Edited 20-07-01 by CAS to expose Trinity options
+		print "$trinity --seqType fq --full_cleanup --max_memory $memory $input_reads --CPU $threads --output $out/Trinity/$sample\.$chain\_trinity --KMER_SIZE $kmer --path_reinforcement_distance $reinforce --min_per_id_same_path $percentID --max_diffs_same_path $maxdiffs > $out/Trinity/Log/$sample\.$chain\_trinity_log\n";
+		system "$trinity --seqType fq --full_cleanup --max_memory $memory $input_reads --CPU $threads --output $out/Trinity/$sample\.$chain\_trinity --no_normalize_reads --KMER_SIZE $kmer --path_reinforcement_distance $reinforce --min_per_id_same_path $percentID --max_diffs_same_path $maxdiffs > $out/Trinity/Log/$sample\.$chain\_trinity_log";
+#		system "$trinity --seqType fq --full_cleanup --max_memory $memory $input_reads --CPU $threads --output $out/Trinity/$sample\.$chain\_trinity --no_normalize_reads > $out/Trinity/Log/$sample\.$chain\_trinity_log";
 		print strftime("%Y-%m-%d %H:%M:%S\tFinished Trinity assembly. Assembled reads written in $out/Trinity.\n", localtime(time));		
 	}
 	return "$out/Trinity/$sample\.$chain\_trinity.Trinity.fasta";
@@ -695,8 +702,8 @@ sub run_igblast
 	}
 	else
 	{
-		print "$igblastn -germline_db_V $germline_db_V -germline_db_J $germline_db_J -germline_db_D $germline_db_D  -organism $organism -domain_system imgt -query $input_fasta -auxiliary_data $auxiliary_data  -show_translation -out $out/IgBLAST/$outname\.blastout -num_threads $threads -db $constant_db -evalue 0.001 -outfmt 7 > $out/IgBLAST/$outname\.blastout.log\n";
-		system "$igblastn -germline_db_V $germline_db_V -germline_db_J $germline_db_J -germline_db_D $germline_db_D  -organism $organism -domain_system imgt -query $input_fasta -auxiliary_data $auxiliary_data  -show_translation -out $out/IgBLAST/$outname\.blastout -num_threads $threads -db $constant_db -evalue 0.001 -outfmt 7 > $out/IgBLAST/$outname\.blastout.log";	
+		print "$igblastn -germline_db_V $germline_db_V -germline_db_J $germline_db_J -germline_db_D $germline_db_D  -organism $organism -domain_system imgt -query $input_fasta -auxiliary_data $auxiliary_data  -show_translation -out $out/IgBLAST/$outname\.blastout -num_threads 1 -db $constant_db -evalue 0.001 -outfmt 7 > $out/IgBLAST/$outname\.blastout.log\n";
+		system "$igblastn -germline_db_V $germline_db_V -germline_db_J $germline_db_J -germline_db_D $germline_db_D  -organism $organism -domain_system imgt -query $input_fasta -auxiliary_data $auxiliary_data  -show_translation -out $out/IgBLAST/$outname\.blastout -num_threads 1 -db $constant_db -evalue 0.001 -outfmt 7 > $out/IgBLAST/$outname\.blastout.log";	
 	}
 	
 	system "$BALDR_path/lib/parse_igblast.pl $out/IgBLAST/$outname\.blastout $input_fasta";
@@ -813,7 +820,6 @@ Options:
 		 If any file is not available, it can be copied from resources	 
   --STAR         Path for the STAR binary (required)
   --STAR_index   Path for the STAR aligner genome index
-  --sharedMemory Flag to indicate if STAR should use LoadAndKeep for shared memory. (Default NoSharedMemory)
   --BALDR        Path for the BALDR directory (e.g. ~/BALDR) (required)
   --memory       Max memory for Trinity (default 32G)
   --threads      number of threads for STAR/bowtie2/Trinity (default 1)
